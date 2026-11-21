@@ -1,6 +1,11 @@
 import "dotenv/config";
 import express from "express";
+import dns from "node:dns";
 import cors from "cors";
+import { getDb } from "./config/db.js";
+if (!process.env.VERCEL) {
+  dns.setServers(["8.8.8.8", "8.8.4.4"]);
+}
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -18,8 +23,14 @@ app.get("/", (req, res) => {
   res.json({ message: "WedPlan API is running" });
 });
 
-app.get("/api/health", (req, res) => {
-  res.json({ status: "ok" });
+app.get("/api/health", async (req, res, next) => {
+  try {
+    const db = await getDb();
+    await db.command({ ping: 1 });
+    res.json({ status: "ok", database: "connected" });
+  } catch (err) {
+    next(err);
+  }
 });
 
 
