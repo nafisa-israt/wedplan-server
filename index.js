@@ -1,7 +1,9 @@
 import "dotenv/config";
 import express from "express";
 import dns from "node:dns";
+import servicesRoutes from "./routes/services.js";
 import cors from "cors";
+import meRoutes from "./routes/me.js";
 import { getDb } from "./config/db.js";
 if (!process.env.VERCEL) {
   dns.setServers(["8.8.8.8", "8.8.4.4"]);
@@ -22,6 +24,8 @@ app.use(express.json());
 app.get("/", (req, res) => {
   res.json({ message: "WedPlan API is running" });
 });
+app.use("/api/me", meRoutes);
+app.use("/api/services", servicesRoutes);
 
 app.get("/api/health", async (req, res, next) => {
   try {
