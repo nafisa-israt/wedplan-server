@@ -3,6 +3,7 @@ import express from "express";
 import dns from "node:dns";
 import servicesRoutes from "./routes/services.js";
 import cors from "cors";
+import vendorRoutes from "./routes/vendor.js";
 import meRoutes from "./routes/me.js";
 import { getDb } from "./config/db.js";
 if (!process.env.VERCEL) {
@@ -27,6 +28,7 @@ app.get("/", (req, res) => {
 app.use("/api/me", meRoutes);
 app.use("/api/services", servicesRoutes);
 
+app.use("/api/vendor", vendorRoutes);
 app.get("/api/health", async (req, res, next) => {
   try {
     const db = await getDb();
