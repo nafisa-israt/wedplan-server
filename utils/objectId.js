@@ -1,0 +1,1 @@
+export const isValidId = (id) => typeof id === "string" && /^[a-f\d]{24}$/i.test(id);
