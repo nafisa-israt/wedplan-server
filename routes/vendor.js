@@ -1,3 +1,4 @@
+import { mapByIds } from "../utils/lookup.js";
 import { Router } from "express";
 import { ObjectId } from "mongodb";
 import { getDb } from "../config/db.js";
@@ -185,6 +186,79 @@ router.delete("/services/:id", async (req, res, next) => {
 
     await db.collection("services").deleteOne({ _id: service._id });
     res.json({ message: "Service deleted successfully" });
+  } catch (err) {
+    next(err);
+  }
+});
+// GET /api/vendor/bookings
+router.get("/bookings", async (req, res, next) => {
+  try {
+    const db = await getDb();
+    const bookings = await db
+      .collection("bookings")
+      .find({ vendorId: req.user.id })
+      .sort({ createdAt: -1 })
+      .toArray();
+
+    const services = await mapByIds(db, "services", bookings.map((b) => b.serviceId));
+    const customers = await mapByIds(db, "users", bookings.map((b) => b.customerId));
+
+    res.json({
+      bookings: bookings.map((b) => {
+        const s = services.get(String(b.serviceId));
+        const c = customers.get(String(b.customerId));
+        return {
+          ...b,
+          service: s ? { name: s.serviceName, image: s.images?.[0] || "", price: s.price } : null,
+          customer: c ? { name: c.name, email: c.email, image: c.image || "" } : null,
+        };
+      }),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /api/vendor/bookings/:id/status  { status: "accepted" | "rejected" }
+router.patch("/bookings/:id/status", async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const status = req.body?.status;
+
+    if (!isValidId(id)) {
+      return res.status(400).json({ message: "Invalid booking id" });
+    }
+    if (!["accepted", "rejected"].includes(status)) {
+      return res.status(400).json({ message: "Status must be accepted or rejected" });
+    }
+
+    const db = await getDb();
+    const bookings = db.collection("bookings");
+    const booking = await bookings.findOne({ _id: new ObjectId(id) });
+
+    if (!booking) {
+      return res.status(404).json({ message: "Booking not found" });
+    }
+    // অন্য vendor-এর booking বদলানো যাবে না
+    if (booking.vendorId !== req.user.id) {
+      return res.status(403).json({ message: "You can only manage booking requests for your own services" });
+    }
+    // শুধু pending request process করা যাবে, একবার হয়ে গেলে আর না
+    if (booking.status !== "pending") {
+      return res.status(400).json({
+        message: `This request is already ${booking.status} and cannot be processed again`,
+      });
+    }
+
+    const result = await bookings.updateOne(
+      { _id: booking._id, vendorId: req.user.id, status: "pending" },
+      { $set: { status, respondedAt: new Date() } }
+    );
+    if (result.matchedCount === 0) {
+      return res.status(409).json({ message: "This request has just been updated" });
+    }
+
+    res.json({ message: `Booking ${status} successfully`, status });
   } catch (err) {
     next(err);
   }
