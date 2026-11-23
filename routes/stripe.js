@@ -8,6 +8,8 @@ import { requireRole } from "../middleware/roles.js";
 
 const router = Router();
 
+const PREMIUM_PRICE_CENTS = 999; // $9.99 / month
+
 const stripe = () => {
   if (!process.env.STRIPE_SECRET_KEY) {
     throw new Error("STRIPE_SECRET_KEY is not configured");
@@ -23,7 +25,11 @@ const getPeriodEnd = (subscription) => {
   return ts ? new Date(ts * 1000) : null;
 };
 
-// Stripe webhook — অবশ্যই express.json() middleware-এর আগে mount করতে হবে
+const idOf = (value) => (typeof value === "string" ? value : value?.id);
+
+// ---------------------------------------------------------------
+// Stripe webhook (express.json()-এর আগে mount করা আছে index.js-এ)
+// ---------------------------------------------------------------
 router.post("/webhook", express.raw({ type: "application/json" }), async (req, res) => {
   const signature = req.headers["stripe-signature"];
 
@@ -32,7 +38,6 @@ router.post("/webhook", express.raw({ type: "application/json" }), async (req, r
   }
 
   let event;
-
   try {
     event = stripe().webhooks.constructEvent(
       req.body,
@@ -49,44 +54,68 @@ router.post("/webhook", express.raw({ type: "application/json" }), async (req, r
     const users = db.collection("users");
     const transactions = db.collection("transactions");
 
+    // ১) প্রথম পেমেন্ট সফল: Premium চালু + transaction সংরক্ষণ
     if (event.type === "checkout.session.completed") {
       const session = event.data.object;
+      const vendorId = session.metadata?.vendorId;
+      const subscriptionId = idOf(session.subscription);
 
-      if (session.mode === "subscription") {
-        const vendorId = session.metadata?.vendorId;
-        const subscriptionId = session.subscription;
+      if (
+        session.mode === "subscription" &&
+        session.payment_status === "paid" &&
+        vendorId &&
+        ObjectId.isValid(vendorId) &&
+        subscriptionId
+      ) {
+        const subscription = await stripe().subscriptions.retrieve(subscriptionId);
 
-        if (vendorId && ObjectId.isValid(vendorId) && subscriptionId) {
-          const subscription = await stripe().subscriptions.retrieve(
-            subscriptionId
-          );
+        await users.updateOne(
+          { _id: new ObjectId(vendorId) },
+          {
+            $set: {
+              subscriptionPlan: "premium",
+              subscriptionExpiresAt: getPeriodEnd(subscription),
+              stripeCustomerId: String(idOf(session.customer)),
+              stripeSubscriptionId: String(subscriptionId),
+              cancelAtPeriodEnd: Boolean(subscription.cancel_at_period_end),
+            },
+          }
+        );
 
-          await users.updateOne(
-            { _id: new ObjectId(vendorId) },
-            {
-              $set: {
-                subscriptionPlan: "premium",
-                subscriptionExpiresAt: getPeriodEnd(subscription),
-                stripeCustomerId: String(session.customer),
-                stripeSubscriptionId: String(subscriptionId),
-              },
-            }
-          );
-        }
+        const invoiceId = idOf(session.invoice);
+        const filter = invoiceId
+          ? { stripeInvoiceId: String(invoiceId) }
+          : { stripeSessionId: session.id };
+        const setFields = { stripeSubscriptionId: String(subscriptionId) };
+        if (invoiceId) setFields.stripeSessionId = session.id;
+
+        await transactions.updateOne(
+          filter,
+          {
+            $set: setFields,
+            $setOnInsert: {
+              vendorId,
+              plan: "premium",
+              amount: Number(session.amount_total || 0) / 100,
+              currency: session.currency || "usd",
+              status: "paid",
+              createdAt: new Date(),
+            },
+          },
+          { upsert: true }
+        );
       }
     }
 
+    // ২) প্রতিটি সফল invoice (প্রথম ও নবায়ন): মেয়াদ বাড়ানো + transaction
     if (event.type === "invoice.paid") {
       const invoice = event.data.object;
-      const subscriptionId =
-        invoice.subscription ||
-        invoice.parent?.subscription_details?.subscription;
+      const subscriptionId = idOf(
+        invoice.subscription || invoice.parent?.subscription_details?.subscription
+      );
 
       if (subscriptionId) {
-        const subscription = await stripe().subscriptions.retrieve(
-          subscriptionId
-        );
-
+        const subscription = await stripe().subscriptions.retrieve(subscriptionId);
         const vendorId = subscription.metadata?.vendorId;
 
         if (vendorId && ObjectId.isValid(vendorId)) {
@@ -104,16 +133,14 @@ router.post("/webhook", express.raw({ type: "application/json" }), async (req, r
           await transactions.updateOne(
             { stripeInvoiceId: invoice.id },
             {
+              $set: { stripeSubscriptionId: String(subscriptionId) },
               $setOnInsert: {
                 vendorId,
-                stripeInvoiceId: invoice.id,
-                stripeSessionId: invoice.id,
-                stripeSubscriptionId: String(subscriptionId),
                 plan: "premium",
                 amount: Number(invoice.amount_paid || 0) / 100,
                 currency: invoice.currency || "usd",
                 status: "paid",
-                createdAt: new Date(invoice.created * 1000),
+                createdAt: new Date((invoice.created || Date.now() / 1000) * 1000),
               },
             },
             { upsert: true }
@@ -122,6 +149,7 @@ router.post("/webhook", express.raw({ type: "application/json" }), async (req, r
       }
     }
 
+    // ৩) বাতিল / মেয়াদ শেষ / পরিবর্তন
     if (
       event.type === "customer.subscription.updated" ||
       event.type === "customer.subscription.deleted"
@@ -130,19 +158,31 @@ router.post("/webhook", express.raw({ type: "application/json" }), async (req, r
       const vendorId = subscription.metadata?.vendorId;
 
       if (vendorId && ObjectId.isValid(vendorId)) {
-        const active =
-          subscription.status === "active" ||
-          subscription.status === "trialing";
+        const status = subscription.status;
 
-        await users.updateOne(
-          { _id: new ObjectId(vendorId) },
-          {
-            $set: {
-              subscriptionPlan: active ? "premium" : "free",
-              subscriptionExpiresAt: getPeriodEnd(subscription),
-            },
-          }
-        );
+        if (status === "active" || status === "trialing") {
+          await users.updateOne(
+            { _id: new ObjectId(vendorId) },
+            {
+              $set: {
+                subscriptionPlan: "premium",
+                subscriptionExpiresAt: getPeriodEnd(subscription),
+                cancelAtPeriodEnd: Boolean(subscription.cancel_at_period_end),
+              },
+            }
+          );
+        } else if (["canceled", "unpaid", "incomplete_expired"].includes(status)) {
+          await users.updateOne(
+            { _id: new ObjectId(vendorId) },
+            {
+              $set: {
+                subscriptionPlan: "free",
+                subscriptionExpiresAt: getPeriodEnd(subscription),
+                cancelAtPeriodEnd: false,
+              },
+            }
+          );
+        }
       }
     }
 
@@ -153,20 +193,13 @@ router.post("/webhook", express.raw({ type: "application/json" }), async (req, r
   }
 });
 
-// Create Checkout Session
+// ---------------------------------------------------------------
+// Checkout session তৈরি (vendorId সবসময় verified JWT থেকে আসে)
+// ---------------------------------------------------------------
 router.post("/checkout", verifyJWT, requireRole("vendor"), async (req, res, next) => {
   try {
-    if (!process.env.STRIPE_PRICE_ID) {
-      return res.status(500).json({
-        message: "STRIPE_PRICE_ID is not configured",
-      });
-    }
-
     const db = await getDb();
-
-    const user = await db.collection("users").findOne({
-      _id: new ObjectId(req.user.id),
-    });
+    const user = await db.collection("users").findOne({ _id: new ObjectId(req.user.id) });
 
     if (!user) {
       return res.status(404).json({ message: "Vendor not found" });
@@ -174,38 +207,37 @@ router.post("/checkout", verifyJWT, requireRole("vendor"), async (req, res, next
 
     if (
       user.subscriptionPlan === "premium" &&
-      user.subscriptionExpiresAt &&
-      new Date(user.subscriptionExpiresAt) > new Date()
+      (!user.subscriptionExpiresAt || new Date(user.subscriptionExpiresAt) > new Date())
     ) {
-      return res.status(400).json({
-        message: "You already have an active Premium subscription",
-      });
+      return res.status(400).json({ message: "You already have an active Premium subscription" });
     }
 
     const clientUrl = process.env.CLIENT_URL?.replace(/\/$/, "");
-
     if (!clientUrl) {
       return res.status(500).json({ message: "CLIENT_URL is not configured" });
     }
 
+    // STRIPE_PRICE_ID থাকলে সেটা, না থাকলে সরাসরি দাম দিয়ে
+    const lineItem = process.env.STRIPE_PRICE_ID
+      ? { price: process.env.STRIPE_PRICE_ID, quantity: 1 }
+      : {
+          price_data: {
+            currency: "usd",
+            unit_amount: PREMIUM_PRICE_CENTS,
+            recurring: { interval: "month" },
+            product_data: { name: "WedPlan Premium Vendor" },
+          },
+          quantity: 1,
+        };
+
     const sessionData = {
       mode: "subscription",
-      line_items: [
-        {
-          price: process.env.STRIPE_PRICE_ID,
-          quantity: 1,
-        },
-      ],
+      line_items: [lineItem],
       success_url: `${clientUrl}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${clientUrl}/payment/cancel`,
-      metadata: {
-        vendorId: req.user.id,
-      },
-      subscription_data: {
-        metadata: {
-          vendorId: req.user.id,
-        },
-      },
+      client_reference_id: req.user.id,
+      metadata: { vendorId: req.user.id },
+      subscription_data: { metadata: { vendorId: req.user.id } },
     };
 
     if (user.stripeCustomerId) {
@@ -215,36 +247,32 @@ router.post("/checkout", verifyJWT, requireRole("vendor"), async (req, res, next
     }
 
     const session = await stripe().checkout.sessions.create(sessionData);
-
     return res.json({ url: session.url });
   } catch (err) {
-    next(err);
+    console.error("Stripe checkout error:", err.message);
+    return res.status(502).json({ message: "Could not start the payment. Please try again." });
   }
 });
 
-// Current subscription status
+// ---------------------------------------------------------------
+// বর্তমান subscription অবস্থা (শুধু database থেকে, redirect বিশ্বাস করা হয় না)
+// ---------------------------------------------------------------
 router.get("/status", verifyJWT, requireRole("vendor"), async (req, res, next) => {
   try {
     const db = await getDb();
-
     const user = await db.collection("users").findOne(
       { _id: new ObjectId(req.user.id) },
-      {
-        projection: {
-          subscriptionPlan: 1,
-          subscriptionExpiresAt: 1,
-        },
-      }
+      { projection: { subscriptionPlan: 1, subscriptionExpiresAt: 1, cancelAtPeriodEnd: 1 } }
     );
 
     const active =
       user?.subscriptionPlan === "premium" &&
-      (!user.subscriptionExpiresAt ||
-        new Date(user.subscriptionExpiresAt) > new Date());
+      (!user.subscriptionExpiresAt || new Date(user.subscriptionExpiresAt) > new Date());
 
     return res.json({
       plan: active ? "premium" : "free",
       expiresAt: user?.subscriptionExpiresAt || null,
+      cancelAtPeriodEnd: Boolean(user?.cancelAtPeriodEnd),
     });
   } catch (err) {
     next(err);
