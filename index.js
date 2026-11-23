@@ -2,6 +2,7 @@ import "dotenv/config";
 import express from "express";
 import dns from "node:dns";
 import servicesRoutes from "./routes/services.js";
+import adminRoutes from "./routes/admin.js";
 import cors from "cors";
 import bookingRoutes from "./routes/bookings.js";
 import vendorRoutes from "./routes/vendor.js";
@@ -31,6 +32,7 @@ app.use("/api/services", servicesRoutes);
 
 app.use("/api/vendor", vendorRoutes);
 app.use("/api/bookings", bookingRoutes);
+app.use("/api/admin", adminRoutes);
 app.get("/api/health", async (req, res, next) => {
   try {
     const db = await getDb();
