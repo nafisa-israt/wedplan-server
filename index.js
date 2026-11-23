@@ -1,13 +1,18 @@
+
 import "dotenv/config";
 import express from "express";
 import dns from "node:dns";
+import cors from "cors";
+
 import servicesRoutes from "./routes/services.js";
 import adminRoutes from "./routes/admin.js";
-import cors from "cors";
 import bookingRoutes from "./routes/bookings.js";
 import vendorRoutes from "./routes/vendor.js";
 import meRoutes from "./routes/me.js";
+import stripeRoutes from "./routes/stripe.js";
+
 import { getDb } from "./config/db.js";
+
 if (!process.env.VERCEL) {
   dns.setServers(["8.8.8.8", "8.8.4.4"]);
 }
@@ -21,18 +26,22 @@ app.use(
     credentials: true,
   })
 );
-app.use(express.json());
 
+// Stripe webhook must be before express.json()
+app.use("/api/stripe", stripeRoutes);
+
+app.use(express.json());
 
 app.get("/", (req, res) => {
   res.json({ message: "WedPlan API is running" });
 });
+
 app.use("/api/me", meRoutes);
 app.use("/api/services", servicesRoutes);
-
 app.use("/api/vendor", vendorRoutes);
 app.use("/api/bookings", bookingRoutes);
 app.use("/api/admin", adminRoutes);
+
 app.get("/api/health", async (req, res, next) => {
   try {
     const db = await getDb();
@@ -42,7 +51,6 @@ app.get("/api/health", async (req, res, next) => {
     next(err);
   }
 });
-
 
 // 404 handler
 app.use((req, res) => {
