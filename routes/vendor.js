@@ -126,4 +126,68 @@ router.post("/services", async (req, res, next) => {
   }
 });
 
+// PUT /api/vendor/services/:id  (সম্পাদনা)
+router.put("/services/:id", async (req, res, next) => {
+  try {
+    const { error, data } = validateService(req.body);
+    if (error) return res.status(400).json({ message: error });
+
+    const db = await getDb();
+    const service = await getOwnedService(db, req, res);
+    if (!service) return;
+
+    await db
+      .collection("services")
+      .updateOne({ _id: service._id }, { $set: { ...data, updatedAt: new Date() } });
+
+    res.json({ message: "Service updated successfully" });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /api/vendor/services/:id/availability  (চালু/বন্ধ)
+router.patch("/services/:id/availability", async (req, res, next) => {
+  try {
+    const isActive = req.body?.isActive;
+    if (typeof isActive !== "boolean") {
+      return res.status(400).json({ message: "isActive must be true or false" });
+    }
+
+    const db = await getDb();
+    const service = await getOwnedService(db, req, res);
+    if (!service) return;
+
+    // আবার চালু করার সময়ও Free plan-এর সীমা দেখতে হবে
+    if (isActive && !service.isActive && service.status !== "rejected" && !isPremiumUser(req.user)) {
+      const active = await countActive(db, req.user.id, service._id);
+      if (active >= FREE_SERVICE_LIMIT) {
+        return res.status(403).json({
+          message: `Free plan allows only ${FREE_SERVICE_LIMIT} active services. Upgrade to Premium to publish more.`,
+          code: "PLAN_LIMIT",
+        });
+      }
+    }
+
+    await db.collection("services").updateOne({ _id: service._id }, { $set: { isActive } });
+    res.json({ message: isActive ? "Service is now available" : "Service is now unavailable", isActive });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /api/vendor/services/:id
+router.delete("/services/:id", async (req, res, next) => {
+  try {
+    const db = await getDb();
+    const service = await getOwnedService(db, req, res);
+    if (!service) return;
+
+    await db.collection("services").deleteOne({ _id: service._id });
+    res.json({ message: "Service deleted successfully" });
+  } catch (err) {
+    next(err);
+  }
+});
+
 export default router;
