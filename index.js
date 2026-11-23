@@ -3,6 +3,7 @@ import express from "express";
 import dns from "node:dns";
 import servicesRoutes from "./routes/services.js";
 import cors from "cors";
+import bookingRoutes from "./routes/bookings.js";
 import vendorRoutes from "./routes/vendor.js";
 import meRoutes from "./routes/me.js";
 import { getDb } from "./config/db.js";
@@ -29,6 +30,7 @@ app.use("/api/me", meRoutes);
 app.use("/api/services", servicesRoutes);
 
 app.use("/api/vendor", vendorRoutes);
+app.use("/api/bookings", bookingRoutes);
 app.get("/api/health", async (req, res, next) => {
   try {
     const db = await getDb();
