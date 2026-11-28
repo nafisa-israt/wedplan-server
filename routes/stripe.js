@@ -17,7 +17,7 @@ const stripe = () => {
   return new Stripe(process.env.STRIPE_SECRET_KEY);
 };
 
-// নতুন Stripe API-তে period end থাকে subscription item-এর ভেতরে
+
 const getPeriodEnd = (subscription) => {
   const ts =
     subscription.items?.data?.[0]?.current_period_end ??
@@ -27,9 +27,7 @@ const getPeriodEnd = (subscription) => {
 
 const idOf = (value) => (typeof value === "string" ? value : value?.id);
 
-// ---------------------------------------------------------------
-// Stripe webhook (express.json()-এর আগে mount করা আছে index.js-এ)
-// ---------------------------------------------------------------
+
 router.post("/webhook", express.raw({ type: "application/json" }), async (req, res) => {
   const signature = req.headers["stripe-signature"];
 
@@ -54,7 +52,7 @@ router.post("/webhook", express.raw({ type: "application/json" }), async (req, r
     const users = db.collection("users");
     const transactions = db.collection("transactions");
 
-    // ১) প্রথম পেমেন্ট সফল: Premium চালু + transaction সংরক্ষণ
+    
     if (event.type === "checkout.session.completed") {
       const session = event.data.object;
       const vendorId = session.metadata?.vendorId;
@@ -107,7 +105,7 @@ router.post("/webhook", express.raw({ type: "application/json" }), async (req, r
       }
     }
 
-    // ২) প্রতিটি সফল invoice (প্রথম ও নবায়ন): মেয়াদ বাড়ানো + transaction
+    
     if (event.type === "invoice.paid") {
       const invoice = event.data.object;
       const subscriptionId = idOf(
@@ -149,7 +147,7 @@ router.post("/webhook", express.raw({ type: "application/json" }), async (req, r
       }
     }
 
-    // ৩) বাতিল / মেয়াদ শেষ / পরিবর্তন
+    
     if (
       event.type === "customer.subscription.updated" ||
       event.type === "customer.subscription.deleted"
@@ -193,9 +191,7 @@ router.post("/webhook", express.raw({ type: "application/json" }), async (req, r
   }
 });
 
-// ---------------------------------------------------------------
-// Checkout session তৈরি (vendorId সবসময় verified JWT থেকে আসে)
-// ---------------------------------------------------------------
+
 router.post("/checkout", verifyJWT, requireRole("vendor"), async (req, res, next) => {
   try {
     const db = await getDb();
@@ -217,7 +213,7 @@ router.post("/checkout", verifyJWT, requireRole("vendor"), async (req, res, next
       return res.status(500).json({ message: "CLIENT_URL is not configured" });
     }
 
-    // STRIPE_PRICE_ID থাকলে সেটা, না থাকলে সরাসরি দাম দিয়ে
+    
     const lineItem = process.env.STRIPE_PRICE_ID
       ? { price: process.env.STRIPE_PRICE_ID, quantity: 1 }
       : {
@@ -254,9 +250,7 @@ router.post("/checkout", verifyJWT, requireRole("vendor"), async (req, res, next
   }
 });
 
-// ---------------------------------------------------------------
-// বর্তমান subscription অবস্থা (শুধু database থেকে, redirect বিশ্বাস করা হয় না)
-// ---------------------------------------------------------------
+
 router.get("/status", verifyJWT, requireRole("vendor"), async (req, res, next) => {
   try {
     const db = await getDb();

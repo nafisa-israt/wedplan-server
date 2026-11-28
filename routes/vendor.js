@@ -11,17 +11,17 @@ import { validateService } from "../utils/validateService.js";
 
 const router = Router();
 
-// এই router-এর সব route শুধু logged-in Vendor-এর জন্য
+
 router.use(verifyJWT, requireRole("vendor"));
 
-// "active" = চালু আছে এবং reject হয়নি (pending + approved)
+
 async function countActive(db, vendorId, excludeId) {
   const filter = { vendorId, isActive: true, status: { $in: ["pending", "approved"] } };
   if (excludeId) filter._id = { $ne: excludeId };
   return db.collection("services").countDocuments(filter);
 }
 
-// নিজের service কি না যাচাই করে (ownership check)
+
 async function getOwnedService(db, req, res) {
   const { id } = req.params;
   if (!isValidId(id)) {
@@ -102,7 +102,7 @@ router.post("/services", async (req, res, next) => {
 
     const db = await getDb();
 
-    // Free plan: সর্বোচ্চ ৩টা active service
+   
     if (!isPremiumUser(req.user)) {
       const active = await countActive(db, req.user.id);
       if (active >= FREE_SERVICE_LIMIT) {
@@ -127,7 +127,7 @@ router.post("/services", async (req, res, next) => {
   }
 });
 
-// PUT /api/vendor/services/:id  (সম্পাদনা)
+// PUT /api/vendor/services/:id 
 router.put("/services/:id", async (req, res, next) => {
   try {
     const { error, data } = validateService(req.body);
@@ -147,7 +147,7 @@ router.put("/services/:id", async (req, res, next) => {
   }
 });
 
-// PATCH /api/vendor/services/:id/availability  (চালু/বন্ধ)
+// PATCH /api/vendor/services/:id/availability 
 router.patch("/services/:id/availability", async (req, res, next) => {
   try {
     const isActive = req.body?.isActive;
@@ -159,7 +159,7 @@ router.patch("/services/:id/availability", async (req, res, next) => {
     const service = await getOwnedService(db, req, res);
     if (!service) return;
 
-    // আবার চালু করার সময়ও Free plan-এর সীমা দেখতে হবে
+   
     if (isActive && !service.isActive && service.status !== "rejected" && !isPremiumUser(req.user)) {
       const active = await countActive(db, req.user.id, service._id);
       if (active >= FREE_SERVICE_LIMIT) {
@@ -239,7 +239,7 @@ router.patch("/bookings/:id/status", async (req, res, next) => {
     if (!booking) {
       return res.status(404).json({ message: "Booking not found" });
     }
-    // অন্য vendor-এর booking বদলানো যাবে না
+   
     if (booking.vendorId !== req.user.id) {
       return res.status(403).json({ message: "You can only manage booking requests for your own services" });
     }

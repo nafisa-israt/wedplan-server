@@ -8,7 +8,7 @@ const router = Router();
 
 const escapeRegex = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-// প্রতিটি service-এর সাথে vendor-এর তথ্য জুড়ে দেয়
+
 async function attachVendors(db, services) {
   const ids = [...new Set(services.map((s) => String(s.vendorId)))].filter(isValidId);
   const vendors = ids.length
@@ -36,7 +36,7 @@ async function attachVendors(db, services) {
   });
 }
 
-// GET /api/services?search=&category=&location=&sort=price_asc|price_desc&page=1&limit=9
+
 router.get("/", async (req, res, next) => {
   try {
     const search = String(req.query.search ?? "").trim();
@@ -46,7 +46,7 @@ router.get("/", async (req, res, next) => {
     const page = Math.max(parseInt(req.query.page) || 1, 1);
     const limit = Math.min(Math.max(parseInt(req.query.limit) || 9, 1), 50);
 
-    // শুধু approved ও active service public-এ দেখা যাবে
+    
     const filter = { status: "approved", isActive: true };
     if (search) filter.serviceName = { $regex: escapeRegex(search), $options: "i" };
     if (category && category !== "all") filter.category = category;
@@ -79,7 +79,7 @@ router.get("/", async (req, res, next) => {
   }
 });
 
-// GET /api/services/:id
+
 router.get("/:id", async (req, res, next) => {
   try {
     const { id } = req.params;

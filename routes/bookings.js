@@ -8,10 +8,10 @@ import { mapByIds } from "../utils/lookup.js";
 
 const router = Router();
 
-// Admin booking করতে পারবে না (403)
+
 router.use(verifyJWT, requireRole("customer", "vendor"));
 
-// POST /api/bookings  (booking request পাঠানো)
+// POST /api/bookings 
 router.post("/", async (req, res, next) => {
   try {
     const { serviceId, eventDate, eventLocation, message } = req.body || {};
@@ -41,7 +41,7 @@ router.post("/", async (req, res, next) => {
 
     const db = await getDb();
 
-    // শুধু approved ও active service বুক করা যাবে
+    
     const service = await db
       .collection("services")
       .findOne({ _id: new ObjectId(serviceId), status: "approved", isActive: true });
@@ -49,12 +49,12 @@ router.post("/", async (req, res, next) => {
       return res.status(404).json({ message: "Service not found or not available" });
     }
 
-    // নিজের service বুক করা যাবে না
+    
     if (service.vendorId === req.user.id) {
       return res.status(403).json({ message: "You cannot book your own service" });
     }
 
-    // একই service ও একই তারিখে duplicate active request আটকানো
+  
     const duplicate = await db.collection("bookings").findOne({
       serviceId,
       customerId: req.user.id,
@@ -140,7 +140,7 @@ router.get("/my", async (req, res, next) => {
   }
 });
 
-// PATCH /api/bookings/:id/cancel
+
 router.patch("/:id/cancel", async (req, res, next) => {
   try {
     const { id } = req.params;
@@ -155,7 +155,7 @@ router.patch("/:id/cancel", async (req, res, next) => {
     if (!booking) {
       return res.status(404).json({ message: "Booking not found" });
     }
-    // অন্যের booking cancel করা যাবে না
+    
     if (booking.customerId !== req.user.id) {
       return res.status(403).json({ message: "You can only cancel your own bookings" });
     }
@@ -165,7 +165,7 @@ router.patch("/:id/cancel", async (req, res, next) => {
       });
     }
 
-    // শর্তসহ update: ইতিমধ্যে বদলে গেলে কিছু হবে না
+    
     const result = await bookings.updateOne(
       { _id: booking._id, customerId: req.user.id, status: "pending" },
       { $set: { status: "cancelled", cancelledAt: new Date() } }

@@ -9,7 +9,7 @@ import { isPremiumUser } from "../utils/premium.js";
 
 const router = Router();
 
-// এই router-এর সব route শুধু Admin-এর জন্য
+
 router.use(verifyJWT, requireRole("admin"));
 
 const escapeRegex = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -26,7 +26,6 @@ const USER_FIELDS = {
   createdAt: 1,
 };
 
-// password বা অন্য সংবেদনশীল তথ্য ছাড়া user-এর তথ্য
 function publicUser(u) {
   return {
     _id: u._id,
@@ -125,7 +124,7 @@ router.get("/users/:id", async (req, res, next) => {
   }
 });
 
-// PATCH /api/admin/users/:id/block  { isBlocked: true | false }
+
 router.patch("/users/:id/block", async (req, res, next) => {
   try {
     const { id } = req.params;
@@ -156,7 +155,7 @@ router.patch("/users/:id/block", async (req, res, next) => {
     next(err);
   }
 });
-// GET /api/admin/services?search=&status=&category=
+
 router.get("/services", async (req, res, next) => {
   try {
     const search = String(req.query.search ?? "").trim();
@@ -192,7 +191,7 @@ router.get("/services", async (req, res, next) => {
   }
 });
 
-// PATCH /api/admin/services/:id/status  { status: "approved" | "rejected" | "pending" }
+
 router.patch("/services/:id/status", async (req, res, next) => {
   try {
     const { id } = req.params;
@@ -217,7 +216,7 @@ router.patch("/services/:id/status", async (req, res, next) => {
   }
 });
 
-// DELETE /api/admin/services/:id
+
 router.delete("/services/:id", async (req, res, next) => {
   try {
     const { id } = req.params;
@@ -234,7 +233,7 @@ router.delete("/services/:id", async (req, res, next) => {
   }
 });
 
-// GET /api/admin/transactions  (শুধু দেখা যাবে, বদলানোর কোনো route নেই)
+
 router.get("/transactions", async (req, res, next) => {
   try {
     const db = await getDb();

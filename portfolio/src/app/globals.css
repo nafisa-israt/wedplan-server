@@ -1,0 +1,24 @@
+@import "tailwindcss";
+
+@theme {
+  --color-plum: #4a1942;
+  --color-orchid: #a64d79;
+  --color-rose: #e8a5b5;
+  --color-blush: #f9e4ea;
+  --color-gold: #c9a27e;
+  --color-cream: #fff9f7;
+  --color-ink: #2b1b2e;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--color-cream);
+  color: var(--color-ink);
+}
+
+section {
+  scroll-margin-top: 80px;
+}
